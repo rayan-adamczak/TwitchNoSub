@@ -1,6 +1,6 @@
 {
     "name": "TwitchNoSub",
-    "version": "0.9.3",
+    "version": "0.9.4",
     "description": "Show sub only VOD on Twitch",
     "manifest_version": 3,
     "icons": {
@@ -10,7 +10,7 @@
         {
             "resources": [
                 "src/app.js",
-                "src/chrome/app.js"
+                "src/patch_amazonworker.js"
             ],
             "matches": [
                 "https://*.twitch.tv/*"

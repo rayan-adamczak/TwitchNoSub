@@ -1,3 +1,6 @@
+const PATCH_NODE_ID = "tns-patch-source";
+const patchUrl = chrome.runtime.getURL("src/patch_amazonworker.js");
+
 function injectScript(src) {
     const s = document.createElement('script');
     s.src = chrome.runtime.getURL(src);
@@ -5,9 +8,24 @@ function injectScript(src) {
     (document.head || document.documentElement).append(s);
 }
 
-const extensionType = window.chrome !== undefined ? "chrome" : "firefox";
+// The page cannot read extension files itself, so the content script hands the
+// patch over through an inert node app.js reads when it builds the worker blob.
+async function injectPatchSource() {
+    try {
+        const source = await fetch(patchUrl).then(r => r.text());
 
-console.log("[TNS] Found extension type : " + extensionType);
+        const node = document.createElement('script');
+        node.type = "text/plain";
+        node.id = PATCH_NODE_ID;
+        node.textContent = source;
 
-injectScript(`src/${extensionType}/app.js`);
+        (document.head || document.documentElement).append(node);
+    } catch (e) {
+        console.log("[TNS] Unable to inject the patch source", e);
+    }
+}
+
+localStorage.setItem("tns_internal_patch_url", patchUrl);
+
+injectPatchSource();
 injectScript("src/app.js");

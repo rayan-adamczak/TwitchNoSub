@@ -1,13 +1,12 @@
 {
     "name": "TwitchNoSub",
-    "version": "0.9.3",
+    "version": "0.9.4",
     "description": "Show sub only VOD on Twitch",
     "manifest_version": 2,
     "icons": {
         "128": "assets/icons/icon.png"
     },
     "web_accessible_resources": [
-        "src/firefox/app.js",
         "src/app.js",
         "src/patch_amazonworker.js"
     ],
@@ -18,7 +17,6 @@
             ],
             "js": [
                 "src/restriction-remover.js",
-                "src/firefox/twitchnosub.js",
                 "src/twitchnosub.js"
             ],
             "run_at": "document_start",
