@@ -69,7 +69,12 @@ function clearRestrictedBitrates(payload) {
 // The field turns up under several operations, hence the blind walk.
 const RESTRICTION_MARKERS = ["restricted_bitrates", "resourceRestriction", "isRestricted"];
 
-function stripRestrictions(node, seen = new Set()) {
+// Only subscription gating is ours to clear. Geo blocks, takedowns and parental
+// controls travel under the same field names, so leave anything else alone and
+// say so: if the gate ever comes back, the log names the type to look at.
+const VIDEO_SCOPE_KEYS = new Set(["video", "videos", "vod", "vods"]);
+
+function stripRestrictions(node, inVideo = false, seen = new Set()) {
     if (!node || typeof node !== "object" || seen.has(node)) {
         return false;
     }
@@ -80,26 +85,33 @@ function stripRestrictions(node, seen = new Set()) {
 
     if (Array.isArray(node)) {
         for (const item of node) {
-            changed = stripRestrictions(item, seen) || changed;
+            changed = stripRestrictions(item, inVideo, seen) || changed;
         }
 
         return changed;
     }
 
     for (const [key, value] of Object.entries(node)) {
-        if (key === "resourceRestriction" && value !== null) {
-            node[key] = null;
-            changed = true;
+        if (key === "resourceRestriction" && value) {
+            const type = String(value.type || "unknown");
+
+            if (/SUB/i.test(type)) {
+                node[key] = null;
+                changed = true;
+            } else {
+                console.log(`[TNS] Leaving the ${type} restriction in place`);
+            }
+
             continue;
         }
 
-        if (key === "isRestricted" && value === true) {
+        if (key === "isRestricted" && value === true && inVideo) {
             node[key] = false;
             changed = true;
             continue;
         }
 
-        changed = stripRestrictions(value, seen) || changed;
+        changed = stripRestrictions(value, inVideo || VIDEO_SCOPE_KEYS.has(key), seen) || changed;
     }
 
     return changed;
@@ -140,10 +152,17 @@ window.fetch = async function (input, init) {
             return response;
         }
 
+        // The rewritten body has a different length and is no longer encoded,
+        // so the original values for those headers would be lies.
+        const headers = new Headers(response.headers);
+
+        headers.delete("content-length");
+        headers.delete("content-encoding");
+
         return new Response(JSON.stringify(payload), {
             status: response.status,
             statusText: response.statusText,
-            headers: response.headers
+            headers
         });
     } catch (e) {
         console.log("[TNS] Unable to patch the GraphQL response", e);
@@ -160,7 +179,7 @@ window.Worker = class Worker extends oldWorker {
     // the markers in its workerStringReinsert list. "besuper/" is the marker for
     // this extension, so keep it in the source or vaft silently unpatches us.
     // https://github.com/pixeltris/TwitchAdSolutions besuper/TwitchNoSub
-    constructor(twitchBlobUrl) {
+    constructor(twitchBlobUrl, options) {
         var workerString = getWasmWorkerJs(`${twitchBlobUrl.replaceAll("'", "%27")}`);
 
         const patchSource = getPatchSource();
@@ -168,7 +187,7 @@ window.Worker = class Worker extends oldWorker {
         if (!patchSource) {
             console.log("[TNS] No patch source available, worker left unpatched");
 
-            super(twitchBlobUrl);
+            super(twitchBlobUrl, options);
             return;
         }
 
@@ -177,6 +196,6 @@ window.Worker = class Worker extends oldWorker {
             ${workerString}
         `]));
 
-        super(blobUrl);
+        super(blobUrl, options);
     }
 }
