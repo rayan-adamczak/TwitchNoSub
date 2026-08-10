@@ -39,6 +39,83 @@ function getPatchSource() {
     return null;
 }
 
+// Twitch marks every quality of a sub-only VOD as restricted in the playback
+// token. The player reads that list, shows the subscribe gate and never calls
+// usher, so the worker patch below never gets a request to intercept. Clearing
+// the list lets the player carry on to usher, where the patch takes over.
+function clearRestrictedBitrates(payload) {
+    const token = payload?.data?.videoPlaybackAccessToken;
+
+    if (!token || typeof token.value !== "string") {
+        return false;
+    }
+
+    const value = JSON.parse(token.value);
+
+    if (!value?.chansub?.restricted_bitrates?.length) {
+        return false;
+    }
+
+    console.log(`[TNS] Clearing ${value.chansub.restricted_bitrates.length} restricted qualities`);
+
+    value.chansub.restricted_bitrates = [];
+    token.value = JSON.stringify(value);
+
+    return true;
+}
+
+const oldFetch = window.fetch;
+
+async function readRequestBody(input, init) {
+    if (init && typeof init.body === "string") {
+        return init.body;
+    }
+
+    if (input instanceof Request) {
+        try {
+            return await input.clone().text();
+        } catch (e) {
+            return "";
+        }
+    }
+
+    return "";
+}
+
+window.fetch = async function (input, init) {
+    const url = input instanceof Request ? input.url : String(input);
+
+    if (!url.includes("gql.twitch.tv/gql")) {
+        return oldFetch(input, init);
+    }
+
+    const body = await readRequestBody(input, init);
+    const response = await oldFetch(input, init);
+
+    if (!body.includes("PlaybackAccessToken")) {
+        return response;
+    }
+
+    try {
+        const payload = await response.clone().json();
+        const entries = Array.isArray(payload) ? payload : [payload];
+
+        if (!entries.map(clearRestrictedBitrates).some(Boolean)) {
+            return response;
+        }
+
+        return new Response(JSON.stringify(payload), {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers
+        });
+    } catch (e) {
+        console.log("[TNS] Unable to patch the playback token", e);
+
+        return response;
+    }
+}
+
 const oldWorker = window.Worker;
 
 window.Worker = class Worker extends oldWorker {
