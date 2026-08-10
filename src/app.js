@@ -64,23 +64,48 @@ function clearRestrictedBitrates(payload) {
     return true;
 }
 
-const oldFetch = window.fetch;
+// The gate is also rendered straight from the video metadata, before the player
+// ever asks for a token, so the restriction has to be cleared there as well.
+// The field turns up under several operations, hence the blind walk.
+const RESTRICTION_MARKERS = ["restricted_bitrates", "resourceRestriction", "isRestricted"];
 
-async function readRequestBody(input, init) {
-    if (init && typeof init.body === "string") {
-        return init.body;
+function stripRestrictions(node, seen = new Set()) {
+    if (!node || typeof node !== "object" || seen.has(node)) {
+        return false;
     }
 
-    if (input instanceof Request) {
-        try {
-            return await input.clone().text();
-        } catch (e) {
-            return "";
+    seen.add(node);
+
+    let changed = false;
+
+    if (Array.isArray(node)) {
+        for (const item of node) {
+            changed = stripRestrictions(item, seen) || changed;
         }
+
+        return changed;
     }
 
-    return "";
+    for (const [key, value] of Object.entries(node)) {
+        if (key === "resourceRestriction" && value !== null) {
+            node[key] = null;
+            changed = true;
+            continue;
+        }
+
+        if (key === "isRestricted" && value === true) {
+            node[key] = false;
+            changed = true;
+            continue;
+        }
+
+        changed = stripRestrictions(value, seen) || changed;
+    }
+
+    return changed;
 }
+
+const oldFetch = window.fetch;
 
 window.fetch = async function (input, init) {
     const url = input instanceof Request ? input.url : String(input);
@@ -89,18 +114,29 @@ window.fetch = async function (input, init) {
         return oldFetch(input, init);
     }
 
-    const body = await readRequestBody(input, init);
     const response = await oldFetch(input, init);
 
-    if (!body.includes("PlaybackAccessToken")) {
+    let text;
+
+    try {
+        text = await response.clone().text();
+    } catch (e) {
+        return response;
+    }
+
+    if (!RESTRICTION_MARKERS.some(marker => text.includes(marker))) {
         return response;
     }
 
     try {
-        const payload = await response.clone().json();
+        const payload = JSON.parse(text);
         const entries = Array.isArray(payload) ? payload : [payload];
 
-        if (!entries.map(clearRestrictedBitrates).some(Boolean)) {
+        const changed = entries
+            .map(entry => [clearRestrictedBitrates(entry), stripRestrictions(entry)].some(Boolean))
+            .some(Boolean);
+
+        if (!changed) {
             return response;
         }
 
@@ -110,7 +146,7 @@ window.fetch = async function (input, init) {
             headers: response.headers
         });
     } catch (e) {
-        console.log("[TNS] Unable to patch the playback token", e);
+        console.log("[TNS] Unable to patch the GraphQL response", e);
 
         return response;
     }
