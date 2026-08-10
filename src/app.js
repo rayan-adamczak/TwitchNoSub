@@ -155,6 +155,11 @@ window.fetch = async function (input, init) {
 const oldWorker = window.Worker;
 
 window.Worker = class Worker extends oldWorker {
+    // TwitchAdSolutions (vaft) walks the Worker prototype chain and drops any
+    // wrapper whose source mentions twitch, unless it recognises it from one of
+    // the markers in its workerStringReinsert list. "besuper/" is the marker for
+    // this extension, so keep it in the source or vaft silently unpatches us.
+    // https://github.com/pixeltris/TwitchAdSolutions besuper/TwitchNoSub
     constructor(twitchBlobUrl) {
         var workerString = getWasmWorkerJs(`${twitchBlobUrl.replaceAll("'", "%27")}`);
 
