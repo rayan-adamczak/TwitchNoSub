@@ -1,5 +1,13 @@
 # TwitchNoSub
 
+> **Fork note.** Upstream stopped working on Chrome. This branch fixes it. Three things were broken:
+>
+> 1. The worker patch was fetched from the jsdelivr CDN at runtime. It is now bundled and inlined into the worker blob ([PR #232](https://github.com/besuper/TwitchNoSub/pull/232) covers this part).
+> 2. Twitch marks every quality of a sub-only VOD as restricted in the playback token, and gates the video on `resourceRestriction`. The player rendered the subscribe screen and never called usher, so the worker patch had nothing to intercept. Both are now cleared client-side — subscription gating only, geo blocks and takedowns are left alone and logged.
+> 3. The worker wrapper kept a `besuper/` marker so [TwitchAdSolutions](https://github.com/pixeltris/TwitchAdSolutions) still recognises it. Without it, vaft logs `Attempt to set twitch worker denied` and silently disables this extension. Preserve that string in any refactor of `src/app.js`.
+>
+> Install from this branch, not from master.
+
 Be able to watch any sub-only vod on Twitch, integrated in the website and support every twitch features.
 
 Support chromium based browser (Chrome, Edge, Brave, Opera, ...) and Firefox.
